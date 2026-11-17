@@ -2,17 +2,15 @@
 
 Ansible playbooks that deploy Red Hat build of MicroShift 4.22 on three RHEL 9.8 virtual machines that have no
 route to the internet. Everything installed comes from Red Hat subscription content: RHEL, the MicroShift RPM
-repositories and Red Hat's container registries. Nothing comes from a community build.
+repositories, Red Hat's container registries and Red Hat's mirror registry installer. Nothing comes from a
+community build.
 
 > **Support status.** Red Hat supports MicroShift as a single node. Joining nodes into one cluster
-> (`microshift add-node`) ships in the Red Hat RPMs, but Red Hat's documentation describes it as a test setup, not
-> a supported one. This lab builds one control-plane node and two workers that way. For a supported three-node
+> (`microshift add-node`) ships in the Red Hat RPMs, but Red Hat's documentation states that multi-node is not
+> supported, and the MicroShift project describes it as a setup for testing only. This lab builds one control-plane
+> node and two workers that way. For a supported three-node
 > cluster, use a three-node OpenShift cluster; for supported MicroShift, run each node on its own
 > (see [Three single nodes instead](#three-single-nodes-instead)).
-
-## Status
-
-Work in progress. The playbooks are being run end to end now; open issues track what is and is not validated yet.
 
 ## How it works
 
@@ -109,8 +107,8 @@ The password is a fixed lab password. Change `registry_password` in `group_vars/
 
 ## Build another machine
 
-Any RHEL 9.8 machine on the disconnected network, started from the same guest image, becomes a MicroShift machine
-with the five files under `/client/` and one install. As root on that machine:
+Any RHEL 9.8 machine on the disconnected network, started from the same guest image, becomes a single-node
+MicroShift machine with the five files under `/client/` and one install. As root on that machine:
 
 ```
 curl -o /etc/yum.repos.d/microshift-dist.repo http://dist.microshift.internal/client/microshift-dist.repo
@@ -141,6 +139,30 @@ ansible-playbook teardown.yml
 ```
 
 This removes the VMs, their disks and the networks. The bundle and your three input files stay.
+
+## What was tested
+
+Run on MicroShift 4.22.20 and the RHEL 9.8 guest image, on a Fedora workstation with libvirt:
+
+| Step | Result | Time |
+|---|---|---|
+| `prepare.yml` | Bundle of 2.0 GiB: 83 RPMs, 10 images, the registry installer. The prep VM is unregistered and removed. | 3 min |
+| `infra.yml` | Network with no route out, four VMs | under 1 min |
+| `dist.yml` | Repository, registry and signatures served | 3 min |
+| `cluster.yml` | Three `Ready` nodes, one test pod on each, pods reach each other across nodes; a second run changes nothing | 7 min |
+| `cluster.yml -e multinode=false` | Three separate single-node MicroShifts, a test pod on each | 7 min |
+| Build another machine | The commands above, typed on a fresh VM, give a running single-node MicroShift | |
+| Restart | After shutting down and starting all four VMs the cluster and the registry come back | |
+| `teardown.yml` | No VMs, disks or networks left | under 1 min |
+
+The runs used other network names, addresses and input file locations than the defaults, set with `-e`.
+
+Not tested:
+
+- the `dnf install` and `usermod` lines under "Before you start" (the test workstation already had the packages);
+- carrying the bundle to a physically separate site: `prepare.yml` and the other playbooks ran on the same workstation;
+- any guest image other than RHEL 9.8, or any MicroShift release other than 4.22;
+- updating a running cluster from a newer bundle.
 
 ## Settings
 

@@ -22,8 +22,8 @@
     - name: Install MicroShift
       ansible.builtin.command: >-
         dnf install -y --disablerepo=* --enablerepo=microshift-dist {{ node_packages | join(' ') }}
-      args:
-        creates: /usr/bin/microshift
+      register: install
+      changed_when: "'Nothing to do' not in install.stdout"
 
     # After the install: the folders these go into come with the packages.
     - name: Fetch the registry settings and the registry login
@@ -108,6 +108,7 @@
         ansible.builtin.slurp:
           src: "/var/lib/microshift/resources/kubeadmin/{{ vms[inventory_hostname].ip }}/kubeconfig"
         register: join_kubeconfig
+        when: multinode | bool
         no_log: true
 
 - name: Join the workers
