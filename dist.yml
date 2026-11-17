@@ -55,12 +55,12 @@
         ./mirror-registry install --quayHostname {{ registry }} \
             --initUser {{ registry_user }} --initPassword {{ registry_password }}
       args:
-        creates: /etc/quay-install/quay-rootCA/rootCA.pem
+        creates: /root/quay-install/quay-rootCA/rootCA.pem
 
     - name: Trust the registry's certificate authority
       ansible.builtin.shell: |
         set -e
-        cp /etc/quay-install/quay-rootCA/rootCA.pem /etc/pki/ca-trust/source/anchors/microshift-dist.pem
+        cp /root/quay-install/quay-rootCA/rootCA.pem /etc/pki/ca-trust/source/anchors/microshift-dist.pem
         update-ca-trust
       args:
         creates: /etc/pki/ca-trust/source/anchors/microshift-dist.pem
@@ -134,7 +134,7 @@
 
     - name: Publish the certificate authority for clients
       ansible.builtin.copy:
-        src: /etc/quay-install/quay-rootCA/rootCA.pem
+        src: /root/quay-install/quay-rootCA/rootCA.pem
         dest: /var/www/html/client/rootCA.pem
         remote_src: true
         mode: "0644"
@@ -159,9 +159,6 @@
     - name: Check the repository and the registry answer
       ansible.builtin.uri:
         url: "{{ item }}"
-        url_username: "{{ registry_user }}"
-        url_password: "{{ registry_password }}"
-        force_basic_auth: true
       loop:
         - "http://{{ dist_host }}/bundle/rpms/repodata/repomd.xml"
-        - "https://{{ registry }}/v2/_catalog"
+        - "https://{{ registry }}/health/instance"

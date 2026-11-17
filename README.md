@@ -115,10 +115,10 @@ with the five files under `/client/` and one install. As root on that machine:
 ```
 curl -o /etc/yum.repos.d/microshift-dist.repo http://dist.microshift.internal/client/microshift-dist.repo
 curl -o /etc/pki/ca-trust/source/anchors/microshift-dist.pem http://dist.microshift.internal/client/rootCA.pem
-curl -o /etc/containers/registries.conf.d/microshift-dist.conf http://dist.microshift.internal/client/registries.conf
-curl -o /etc/containers/registries.d/microshift-dist.yaml http://dist.microshift.internal/client/registries.d.yaml
 update-ca-trust
 dnf install -y --disablerepo=* --enablerepo=microshift-dist microshift openshift-clients
+curl -o /etc/containers/registries.conf.d/microshift-dist.conf http://dist.microshift.internal/client/registries.conf
+curl -o /etc/containers/registries.d/microshift-dist.yaml http://dist.microshift.internal/client/registries.d.yaml
 curl -o /etc/crio/openshift-pull-secret http://dist.microshift.internal/client/pull-secret.json
 chmod 600 /etc/crio/openshift-pull-secret
 systemctl enable --now microshift

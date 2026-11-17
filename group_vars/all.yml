@@ -12,7 +12,7 @@ microshift_repo: rhocp-4.22-for-rhel-9-x86_64-rpms
 fast_datapath_repo: fast-datapath-for-rhel-9-x86_64-rpms
 mirror_registry_url: https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/mirror-registry/1.3.11/mirror-registry.tar.gz
 # What a MicroShift machine installs, and what the distribution server needs on top.
-node_packages: [microshift, openshift-clients, firewalld]
+node_packages: [microshift, openshift-clients, firewalld, lvm2]
 dist_packages: [httpd, podman, skopeo]
 # Images carried in addition to the MicroShift release images (the test application).
 extra_images:
@@ -20,6 +20,7 @@ extra_images:
 
 # true: node1 is the control plane and node2, node3 join it. false: three separate single-node MicroShifts.
 multinode: true
+runs_control_plane: "{{ not (multinode | bool) or inventory_hostname in groups['control_plane'] }}"
 
 # libvirt.
 virsh: virsh -c qemu:///system
