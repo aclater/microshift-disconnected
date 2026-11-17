@@ -33,7 +33,7 @@ partial mirror.
 ## A distribution server inside the disconnected network
 **Decided:** one VM, `dist`, is staged from the bundle and serves the RPM repository over HTTP and the images from
 a registry. Nodes install only from it.
-**Why:** the owner asked for a server from which MicroShift machines can be built offline. It matches Red Hat's
+**Why:** the request was a server from which MicroShift machines can be built offline. It matches Red Hat's
 documented disconnected method for package installs (a mirror registry plus a local RPM repository), and new
 machines need no further transfer from outside.
 **Considered:** copying the bundle to every node and loading the images straight into each node's container
@@ -53,3 +53,20 @@ and clients are pointed there.
 also when they arrive through a mirror. Keeping the signatures keeps the policy unchanged on every client.
 **Considered:** relaxing the policy on the clients.
 **Cost:** one more client settings file.
+
+## Clients pull from the registry without a login
+**Decided:** repositories in the registry are readable anonymously. The administrator login is generated per lab,
+kept in the working folder, and used only on the distribution server to push.
+**Why:** the first release gave every node the administrator login, with a fixed password, so any machine on the
+network could replace images. Every machine on a disconnected network may read the mirror anyway; none should be
+able to write to it.
+**Considered:** a pull-only account for clients. It needs the registry's API with a token the installer does not
+keep, for no gain over anonymous read on an isolated network.
+**Cost:** anyone on the disconnected network can read the mirrored images.
+
+## The playbooks deliver client settings over SSH
+**Decided:** `cluster.yml` reads the client settings on the distribution server and copies them to the nodes over
+SSH. The same files stay published under `/client/` for machines set up by hand.
+**Why:** the settings include the certificate authority a node will trust; fetched over plain HTTP, another machine
+on the network could substitute it.
+**Cost:** the manual route still uses HTTP, and the README says when that is acceptable.

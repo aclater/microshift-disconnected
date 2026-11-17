@@ -1,0 +1,21 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    container: registry.fedoraproject.org/fedora:43
+    steps:
+      - run: dnf install -y ansible-core yamllint git-core
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: yamllint .
+      - run: |
+          for playbook in prepare infra dist cluster teardown; do
+            ansible-playbook --syntax-check "$playbook.yml"
+          done
