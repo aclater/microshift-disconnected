@@ -6,7 +6,7 @@
   <ip address='{{ lab_subnet }}.1' netmask='255.255.255.0'>
     <dhcp>
       <range start='{{ lab_subnet }}.100' end='{{ lab_subnet }}.199'/>
-{% for name in groups['nodes'] %}
+{% for name in groups['dist'] + groups['nodes'] %}
       <host mac='{{ vms[name].mac }}' name='{{ name }}' ip='{{ vms[name].ip }}'/>
 {% endfor %}
     </dhcp>

@@ -25,12 +25,11 @@
       loop: "{{ vms.keys() | list }}"
       failed_when: false
 
-    - name: Remove the disks and the copy markers
+    - name: Remove the disks
       ansible.builtin.file:
         path: "{{ lab_dir }}/{{ item }}"
         state: absent
       loop: "{{ vms.keys() | map('regex_replace', '^(.*)$', 'images/\\1.qcow2') | list
-                + groups['nodes'] | map('regex_replace', '^(.*)$', '.copied-\\1') | list
                 + ['known_hosts'] }}"
 
     - name: Stop the networks

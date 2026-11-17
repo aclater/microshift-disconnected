@@ -18,19 +18,20 @@ Work in progress. The playbooks are being run end to end now; open issues track 
 
 | Step | Where | What happens |
 |---|---|---|
-| `prepare.yml` | connected | A temporary, registered RHEL VM downloads the MicroShift RPMs with their dependencies and the container images, packs them into one bundle file, unregisters and is deleted. |
-| `infra.yml` | disconnected | Creates a libvirt network with no way out and three RHEL VMs on it. |
-| `cluster.yml` | disconnected | Copies the bundle to each node, installs MicroShift from it, loads the images into each node's container storage, starts `node1`, joins `node2` and `node3`, and runs a test application with one pod on each node. |
+| `prepare.yml` | connected | A temporary, registered RHEL VM downloads the MicroShift RPMs with their dependencies, the container images and the mirror registry installer, packs them into one bundle file, unregisters and is deleted. |
+| `infra.yml` | disconnected | Creates a libvirt network with no way out, and four RHEL VMs on it: `dist`, `node1`, `node2`, `node3`. |
+| `dist.yml` | disconnected | Stages the distribution server `dist` from the bundle: a package repository and a container registry holding everything a MicroShift machine is built from. |
+| `cluster.yml` | disconnected | Installs MicroShift on the three nodes from `dist`, starts `node1`, joins `node2` and `node3`, and runs a test application with one pod on each node. |
 
-No registry and no package mirror run in the disconnected network: each node installs from the bundle's package
-repository on its own disk and finds every image already in its local storage.
+Only `dist` ever sees the bundle. Every other machine installs from `dist`, so more MicroShift machines can be built
+later without another trip outside (see [Build another machine](#build-another-machine)).
 
 In a real disconnected site, run `prepare.yml` on a connected machine, carry
-`~/.local/share/microshift-lab/bundle/microshift-bundle.tar` across, and run the other two playbooks there.
+`~/.local/share/microshift-lab/bundle/microshift-bundle.tar` across, and run the other playbooks there.
 
 ## Before you start
 
-A Linux workstation with KVM and at least 16 GiB of free memory, and these packages:
+A Linux workstation with KVM and at least 20 GiB of free memory, and these packages:
 
 ```
 sudo dnf install ansible-core libvirt qemu-kvm virt-install
@@ -70,6 +71,7 @@ git clone https://github.com/aclater/microshift-disconnected.git
 cd microshift-disconnected
 ansible-playbook prepare.yml
 ansible-playbook infra.yml
+ansible-playbook dist.yml
 ansible-playbook cluster.yml
 ```
 
@@ -91,6 +93,36 @@ curl --max-time 5 https://registry.redhat.io
 ```
 
 The `curl` command fails: the network has no route out.
+
+## The distribution server
+
+`dist.microshift.internal` serves:
+
+| What | Where |
+|---|---|
+| RPM repository: MicroShift and its dependencies | `http://dist.microshift.internal/bundle/rpms` |
+| Container registry (mirror registry for Red Hat OpenShift): the MicroShift release images | `https://dist.microshift.internal:8443`, user `init`, password `microshift123` |
+| Image signatures for images Red Hat signs | `http://dist.microshift.internal/sigstore` |
+| Settings a client needs | `http://dist.microshift.internal/client/` |
+
+The password is a fixed lab password. Change `registry_password` in `group_vars/all.yml` for anything else.
+
+## Build another machine
+
+Any RHEL 9.8 machine on the disconnected network, started from the same guest image, becomes a MicroShift machine
+with the five files under `/client/` and one install. As root on that machine:
+
+```
+curl -o /etc/yum.repos.d/microshift-dist.repo http://dist.microshift.internal/client/microshift-dist.repo
+curl -o /etc/pki/ca-trust/source/anchors/microshift-dist.pem http://dist.microshift.internal/client/rootCA.pem
+curl -o /etc/containers/registries.conf.d/microshift-dist.conf http://dist.microshift.internal/client/registries.conf
+curl -o /etc/containers/registries.d/microshift-dist.yaml http://dist.microshift.internal/client/registries.d.yaml
+update-ca-trust
+dnf install -y --disablerepo=* --enablerepo=microshift-dist microshift openshift-clients
+curl -o /etc/crio/openshift-pull-secret http://dist.microshift.internal/client/pull-secret.json
+chmod 600 /etc/crio/openshift-pull-secret
+systemctl enable --now microshift
+```
 
 ## Three single nodes instead
 

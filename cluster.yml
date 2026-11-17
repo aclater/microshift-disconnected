@@ -1,53 +1,39 @@
-# Disconnected side, step 2: install MicroShift on the three nodes from the bundle and join them.
+# Disconnected side, step 3: install MicroShift on the three nodes from the distribution server and join them.
 # node1 runs the control plane; node2 and node3 join it as workers.
-- name: Install MicroShift from the bundle
+- name: Install MicroShift from the distribution server
   hosts: nodes
   gather_facts: false
   become: true
   tasks:
-    - name: Copy the bundle to the node
-      ansible.builtin.command: scp -q -F {{ ssh_config }} {{ bundle }} {{ inventory_hostname }}:/var/tmp/microshift-bundle.tar
-      args:
-        creates: "{{ lab_dir }}/.copied-{{ inventory_hostname }}"
-      delegate_to: localhost
-      become: false
-      when: not bundle_unpacked | default(false)
+    # These four files are all a machine needs to install MicroShift from the distribution server.
+    - name: Fetch the client settings from the distribution server
+      ansible.builtin.get_url:
+        url: "http://{{ dist_host }}/client/{{ item.file }}"
+        dest: "{{ item.dest }}"
+        mode: "{{ item.mode | default('0644') }}"
+      loop:
+        - {file: microshift-dist.repo, dest: /etc/yum.repos.d/microshift-dist.repo}
+        - {file: rootCA.pem, dest: /etc/pki/ca-trust/source/anchors/microshift-dist.pem}
+        - {file: registries.conf, dest: /etc/containers/registries.conf.d/microshift-dist.conf}
+        - {file: registries.d.yaml, dest: /etc/containers/registries.d/microshift-dist.yaml}
+      register: client_files
 
-    - name: Unpack the bundle
-      ansible.builtin.shell: tar -C /var -xf /var/tmp/microshift-bundle.tar && rm -f /var/tmp/microshift-bundle.tar
-      args:
-        creates: /var/bundle/VERSION
-
-    - name: Point dnf at the bundle's packages
-      ansible.builtin.copy:
-        dest: /etc/yum.repos.d/microshift-bundle.repo
-        mode: "0644"
-        content: |
-          [microshift-bundle]
-          name=MicroShift bundle
-          baseurl=file:///var/bundle/rpms
-          enabled=1
-          gpgcheck=1
-          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+    - name: Trust the distribution server's certificate authority
+      ansible.builtin.command: update-ca-trust
+      when: client_files is changed
 
     - name: Install MicroShift
       ansible.builtin.command: >-
-        dnf install -y --disablerepo=* --enablerepo=microshift-bundle {{ bundle_packages | join(' ') }}
+        dnf install -y --disablerepo=* --enablerepo=microshift-dist {{ node_packages | join(' ') }}
       args:
         creates: /usr/bin/microshift
 
-    - name: Load the container images
-      ansible.builtin.script: files/load-images.sh
-      args:
-        creates: /var/bundle/.images-loaded
-
-    - name: Mark the images as loaded
-      ansible.builtin.file:
-        path: /var/bundle/.images-loaded
-        state: touch
-        mode: "0644"
-        modification_time: preserve
-        access_time: preserve
+    # After the install: the folder /etc/crio comes with the packages.
+    - name: Fetch the registry login
+      ansible.builtin.get_url:
+        url: "http://{{ dist_host }}/client/pull-secret.json"
+        dest: /etc/crio/openshift-pull-secret
+        mode: "0600"
 
     - name: Start the firewall
       ansible.builtin.systemd:

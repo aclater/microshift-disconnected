@@ -1,4 +1,4 @@
-# Test application: a DaemonSet, so one web server pod on each node, from an image carried in the bundle.
+# Test application: a DaemonSet, so one web server pod on each node, from an image on the distribution server.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -21,7 +21,7 @@ spec:
       containers:
         - name: httpd
           image: registry.access.redhat.com/ubi9/httpd-24:latest
-          imagePullPolicy: Never
+          imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
           securityContext:

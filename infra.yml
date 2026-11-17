@@ -1,5 +1,5 @@
-# Disconnected side, step 1: a network with no way out and three RHEL VMs on it.
-- name: Create the disconnected network and the three nodes
+# Disconnected side, step 1: a network with no way out, with the distribution server and three nodes on it.
+- name: Create the disconnected network and its VMs
   hosts: localhost
   connection: local
   gather_facts: false
@@ -13,17 +13,17 @@
         net_name: "{{ lab_network }}"
         net_template: files/network-lab.xml.j2
 
-    - name: Create the nodes
+    - name: Create the VMs
       ansible.builtin.include_tasks: tasks/create-vm.yml
-      loop: "{{ groups['nodes'] }}"
+      loop: "{{ groups['dist'] + groups['nodes'] }}"
       loop_control:
         loop_var: vm_host
 
-- name: Check the nodes
-  hosts: nodes
+- name: Check the VMs
+  hosts: dist:nodes
   gather_facts: false
   tasks:
-    - name: Wait for the node
+    - name: Wait for the VM
       ansible.builtin.wait_for_connection:
         timeout: 300
 

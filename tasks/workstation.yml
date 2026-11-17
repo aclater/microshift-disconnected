@@ -3,8 +3,13 @@
   ansible.builtin.file:
     path: "{{ lab_dir }}/{{ item }}"
     state: directory
-    mode: "0700"
   loop: [inputs, keys, images, bundle]
+
+- name: Keep the inputs and the SSH key private
+  ansible.builtin.file:
+    path: "{{ lab_dir }}/{{ item }}"
+    mode: "0700"
+  loop: [inputs, keys]
 
 # The system libvirt runs VMs as the user qemu, which must be able to pass through every folder above
 # the disks. Folders that already let it through are left alone.
@@ -13,7 +18,7 @@
     set -e
     dir={{ lab_dir }}/images
     while [ "$dir" != / ]; do
-        if ! getfacl -cp "$dir" | grep -qE '^(user:qemu:..x|other::..x)'; then
+        if ! getfacl -cp "$dir" | grep -qE '^(user:qemu:..x|other::..x)$'; then
             setfacl -m u:qemu:x "$dir"
             echo "changed $dir"
         fi
