@@ -1,0 +1,19 @@
+<!-- Disconnected network: no <forward>, so nothing leaves it. libvirt's dnsmasq gives fixed addresses and names. -->
+<network xmlns:dnsmasq='http://libvirt.org/schemas/network/dnsmasq/1.0'>
+  <name>{{ lab_network }}</name>
+  <bridge name='{{ lab_bridge }}' stp='on' delay='0'/>
+  <domain name='{{ lab_domain }}' localOnly='yes'/>
+  <ip address='{{ lab_subnet }}.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='{{ lab_subnet }}.100' end='{{ lab_subnet }}.199'/>
+{% for name in groups['nodes'] %}
+      <host mac='{{ vms[name].mac }}' name='{{ name }}' ip='{{ vms[name].ip }}'/>
+{% endfor %}
+    </dhcp>
+  </ip>
+  <!-- MicroShift takes its node address from the interface that holds the default route, so hand one out
+       even though it leads nowhere. -->
+  <dnsmasq:options>
+    <dnsmasq:option value='dhcp-option=option:router,{{ lab_subnet }}.1'/>
+  </dnsmasq:options>
+</network>

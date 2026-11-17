@@ -1,0 +1,11 @@
+Host *
+  User cloud-user
+  IdentityFile {{ lab_dir }}/keys/id_ed25519
+  IdentitiesOnly yes
+  UserKnownHostsFile {{ lab_dir }}/known_hosts
+  StrictHostKeyChecking accept-new
+{% for name, vm in vms.items() %}
+
+Host {{ name }}
+  HostName {{ vm.ip }}
+{% endfor %}

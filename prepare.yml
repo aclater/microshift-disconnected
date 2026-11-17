@@ -1,0 +1,150 @@
+# Connected side. Builds the bundle that is carried into the disconnected environment:
+# the MicroShift RPMs with their dependencies, and the container images.
+# A registered RHEL VM does the downloading and is removed again at the end.
+- name: Create the connected network and the prep VM
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Prepare the workstation
+      ansible.builtin.import_tasks: tasks/workstation.yml
+
+    - name: Check the pull secret and the activation key file are there
+      ansible.builtin.stat:
+        path: "{{ item }}"
+        get_checksum: false
+      register: input_stat
+      failed_when: not input_stat.stat.exists
+      loop: ["{{ pull_secret }}", "{{ rhsm_file }}"]
+
+    - name: Create the connected network
+      ansible.builtin.include_tasks: tasks/network.yml
+      vars:
+        net_name: "{{ prep_network }}"
+        net_template: files/network-prep.xml.j2
+
+    - name: Create the prep VM
+      ansible.builtin.include_tasks: tasks/create-vm.yml
+      vars:
+        vm_host: prep
+
+- name: Build the bundle on the prep VM
+  hosts: prep
+  gather_facts: false
+  become: true
+  vars:
+    rhsm_lines: "{{ lookup('ansible.builtin.file', rhsm_file).splitlines() }}"
+    rhsm_org: "{{ rhsm_lines | select('match', 'org=') | first | regex_replace('^org=', '') | trim }}"
+    rhsm_key: "{{ rhsm_lines | select('match', 'key=') | first | regex_replace('^key=', '') | trim }}"
+  tasks:
+    - name: Wait for the VM
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+
+    - name: See whether the VM is registered
+      ansible.builtin.command: subscription-manager identity
+      register: identity
+      changed_when: false
+      failed_when: false
+
+    - name: Register the VM with Red Hat
+      ansible.builtin.command: subscription-manager register --org {{ rhsm_org }} --activationkey {{ rhsm_key }}
+      when: identity.rc != 0
+      no_log: true
+
+    - name: Enable the MicroShift repositories
+      ansible.builtin.command: >-
+        subscription-manager repos --enable {{ microshift_repo }} --enable {{ fast_datapath_repo }}
+
+    # Download before installing anything here: dnf leaves out packages that are already installed, and
+    # the nodes start from the same guest image as this VM.
+    - name: Download MicroShift and everything it needs on a fresh guest image
+      ansible.builtin.command: >-
+        dnf install -y --downloadonly --downloaddir /var/bundle/rpms {{ bundle_packages | join(' ') }}
+      args:
+        creates: /var/bundle/rpms
+
+    - name: Install the tools that build the bundle
+      ansible.builtin.dnf:
+        name: [createrepo_c, skopeo, jq, microshift-release-info]
+        state: present
+
+    - name: Turn the downloaded packages into a repository
+      ansible.builtin.command: createrepo_c /var/bundle/rpms
+      args:
+        creates: /var/bundle/rpms/repodata
+
+    - name: Copy the pull secret to the VM
+      ansible.builtin.copy:
+        src: "{{ pull_secret }}"
+        dest: /root/pull-secret.json
+        mode: "0600"
+      no_log: true
+
+    - name: Download the container images
+      ansible.builtin.script: files/mirror-images.sh {{ extra_images | join(' ') }}
+      args:
+        creates: /var/bundle/images/list.txt
+
+    - name: Remove the pull secret from the VM
+      ansible.builtin.file:
+        path: /root/pull-secret.json
+        state: absent
+
+    - name: Record what is in the bundle
+      ansible.builtin.shell: |
+        set -e
+        rpm -q --qf '%{VERSION}\n' microshift-release-info > /var/bundle/VERSION
+        ls /var/bundle/rpms/*.rpm | wc -l > /var/bundle/RPM-COUNT
+      changed_when: false
+
+    - name: Pack the bundle
+      ansible.builtin.command: tar -C /var -cf /var/microshift-bundle.tar bundle
+      args:
+        creates: /var/microshift-bundle.tar
+
+    - name: Let the lab user read the bundle
+      ansible.builtin.file:
+        path: /var/microshift-bundle.tar
+        mode: "0644"
+
+    - name: Copy the bundle to the workstation
+      ansible.builtin.command: scp -q -F {{ ssh_config }} prep:/var/microshift-bundle.tar {{ bundle }}
+      delegate_to: localhost
+      become: false
+
+    - name: Unregister the VM
+      ansible.builtin.command: subscription-manager unregister
+
+- name: Remove the prep VM and the connected network
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Remove the prep VM
+      ansible.builtin.command: "{{ virsh }} {{ item }}"
+      loop:
+        - "destroy {{ vm_prefix }}prep"
+        - "undefine {{ vm_prefix }}prep --nvram"
+      failed_when: false
+
+    - name: Remove its disk
+      ansible.builtin.file:
+        path: "{{ lab_dir }}/images/prep.qcow2"
+        state: absent
+
+    - name: Remove the connected network
+      ansible.builtin.command: "{{ virsh }} {{ item }}"
+      loop:
+        - "net-destroy {{ prep_network }}"
+        - "net-undefine {{ prep_network }}"
+
+    - name: Show the bundle
+      ansible.builtin.stat:
+        path: "{{ bundle }}"
+        get_checksum: false
+      register: bundle_stat
+
+    - name: Report
+      ansible.builtin.debug:
+        msg: "Bundle: {{ bundle }} ({{ (bundle_stat.stat.size / 1048576) | round | int }} MiB)"

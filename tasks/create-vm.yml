@@ -1,0 +1,32 @@
+# Create one VM from the RHEL guest image unless it already exists. Parameter: vm_host (a key of vms).
+- name: "Look for the VM {{ vm_prefix }}{{ vm_host }}"
+  ansible.builtin.command: "{{ virsh }} domstate {{ vm_prefix }}{{ vm_host }}"
+  register: vm_state
+  changed_when: false
+  failed_when: false
+
+- name: "Create the VM {{ vm_prefix }}{{ vm_host }}"
+  when: vm_state.rc != 0
+  block:
+    - name: Copy the guest image
+      ansible.builtin.command: "cp --sparse=always {{ guest_image }} {{ lab_dir }}/images/{{ vm_host }}.qcow2"
+
+    - name: Grow the disk
+      ansible.builtin.command: "qemu-img resize {{ lab_dir }}/images/{{ vm_host }}.qcow2 {{ vms[vm_host].disk }}"
+
+    - name: Forget the host key of an earlier VM at the same address
+      ansible.builtin.command: "ssh-keygen -R {{ vms[vm_host].ip }} -f {{ lab_dir }}/known_hosts"
+      failed_when: false
+
+    - name: Create and start the VM
+      ansible.builtin.command: >-
+        virt-install --connect qemu:///system --name {{ vm_prefix }}{{ vm_host }}
+        --memory {{ vms[vm_host].memory }} --vcpus {{ vms[vm_host].vcpus }}
+        --import --disk {{ lab_dir }}/images/{{ vm_host }}.qcow2 --osinfo rhel9-unknown
+        --network network={{ vms[vm_host].network }},mac={{ vms[vm_host].mac }}
+        --cloud-init clouduser-ssh-key={{ lab_dir }}/keys/id_ed25519.pub
+        --graphics none --noautoconsole
+
+- name: "Start the VM {{ vm_prefix }}{{ vm_host }} if it is shut off"
+  ansible.builtin.command: "{{ virsh }} start {{ vm_prefix }}{{ vm_host }}"
+  when: vm_state.rc == 0 and 'shut off' in vm_state.stdout

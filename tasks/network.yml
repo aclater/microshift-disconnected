@@ -1,0 +1,22 @@
+# Define and start one libvirt network. Parameters: net_name, net_template.
+- name: "Look for the network {{ net_name }}"
+  ansible.builtin.command: "{{ virsh }} net-info {{ net_name }}"
+  register: net_info
+  changed_when: false
+  failed_when: false
+
+- name: "Define the network {{ net_name }}"
+  when: net_info.rc != 0
+  block:
+    - name: Write the network definition
+      ansible.builtin.template:
+        src: "{{ net_template }}"
+        dest: "{{ lab_dir }}/{{ net_name }}.xml"
+        mode: "0600"
+
+    - name: Define the network
+      ansible.builtin.command: "{{ virsh }} net-define {{ lab_dir }}/{{ net_name }}.xml"
+
+- name: "Start the network {{ net_name }}"
+  ansible.builtin.command: "{{ virsh }} net-start {{ net_name }}"
+  when: net_info.rc != 0 or net_info.stdout is not search('Active:\s+yes')

@@ -1,0 +1,14 @@
+all:
+  children:
+    connected:
+      hosts:
+        prep:
+    nodes:
+      children:
+        control_plane:
+          hosts:
+            node1:
+        workers:
+          hosts:
+            node2:
+            node3:

@@ -1,0 +1,44 @@
+# Remove the VMs, their disks and the networks. The bundle and your input files are kept.
+- name: Remove the lab
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: See whether a prep VM is still there
+      ansible.builtin.command: "{{ virsh }} domstate {{ vm_prefix }}prep"
+      register: prep_state
+      changed_when: false
+      failed_when: false
+
+    - name: Unregister the prep VM from Red Hat
+      ansible.builtin.command: ssh -F {{ ssh_config }} prep sudo subscription-manager unregister
+      when: prep_state.rc == 0 and 'running' in prep_state.stdout
+      failed_when: false
+
+    - name: Stop the VMs
+      ansible.builtin.command: "{{ virsh }} destroy {{ vm_prefix }}{{ item }}"
+      loop: "{{ vms.keys() | list }}"
+      failed_when: false
+
+    - name: Remove the VMs
+      ansible.builtin.command: "{{ virsh }} undefine {{ vm_prefix }}{{ item }} --nvram"
+      loop: "{{ vms.keys() | list }}"
+      failed_when: false
+
+    - name: Remove the disks and the copy markers
+      ansible.builtin.file:
+        path: "{{ lab_dir }}/{{ item }}"
+        state: absent
+      loop: "{{ vms.keys() | map('regex_replace', '^(.*)$', 'images/\\1.qcow2') | list
+                + groups['nodes'] | map('regex_replace', '^(.*)$', '.copied-\\1') | list
+                + ['known_hosts'] }}"
+
+    - name: Stop the networks
+      ansible.builtin.command: "{{ virsh }} net-destroy {{ item }}"
+      loop: ["{{ prep_network }}", "{{ lab_network }}"]
+      failed_when: false
+
+    - name: Remove the networks
+      ansible.builtin.command: "{{ virsh }} net-undefine {{ item }}"
+      loop: ["{{ prep_network }}", "{{ lab_network }}"]
+      failed_when: false

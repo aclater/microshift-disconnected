@@ -1,0 +1,41 @@
+# Working folder, SSH key and SSH settings on the workstation.
+- name: Create the working folder
+  ansible.builtin.file:
+    path: "{{ lab_dir }}/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop: [inputs, keys, images, bundle]
+
+# The system libvirt runs VMs as the user qemu, which must be able to pass through every folder above
+# the disks. Folders that already let it through are left alone.
+- name: Let libvirt reach the VM disks
+  ansible.builtin.shell: |
+    set -e
+    dir={{ lab_dir }}/images
+    while [ "$dir" != / ]; do
+        if ! getfacl -cp "$dir" | grep -qE '^(user:qemu:..x|other::..x)'; then
+            setfacl -m u:qemu:x "$dir"
+            echo "changed $dir"
+        fi
+        dir=$(dirname "$dir")
+    done
+  register: acl
+  changed_when: "'changed' in acl.stdout"
+
+- name: Create the lab SSH key
+  ansible.builtin.command: ssh-keygen -q -t ed25519 -N "" -C microshift-lab -f {{ lab_dir }}/keys/id_ed25519
+  args:
+    creates: "{{ lab_dir }}/keys/id_ed25519"
+
+- name: Write the SSH settings
+  ansible.builtin.template:
+    src: files/ssh_config.j2
+    dest: "{{ ssh_config }}"
+    mode: "0600"
+
+- name: Check the RHEL guest image is there
+  ansible.builtin.stat:
+    path: "{{ guest_image }}"
+    get_checksum: false
+  register: guest_image_stat
+  failed_when: not guest_image_stat.stat.exists

@@ -1,0 +1,12 @@
+<!-- Connected network: NAT to the outside. Only the prep VM lives here. -->
+<network>
+  <name>{{ prep_network }}</name>
+  <forward mode='nat'/>
+  <bridge name='{{ prep_bridge }}' stp='on' delay='0'/>
+  <ip address='{{ prep_subnet }}.1' netmask='255.255.255.0'>
+    <dhcp>
+      <range start='{{ prep_subnet }}.100' end='{{ prep_subnet }}.199'/>
+      <host mac='{{ vms.prep.mac }}' name='prep' ip='{{ vms.prep.ip }}'/>
+    </dhcp>
+  </ip>
+</network>

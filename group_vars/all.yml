@@ -1,0 +1,43 @@
+# Settings for every playbook. The defaults match the README; override with -e only to run a second copy
+# under other names.
+lab_dir: "{{ lookup('env', 'HOME') }}/.local/share/microshift-lab"
+
+# What you supply (README, "Before you start").
+guest_image: "{{ lab_dir }}/inputs/rhel-9.8-x86_64-kvm.qcow2"
+pull_secret: "{{ lab_dir }}/inputs/pull-secret.json"
+rhsm_file: "{{ lab_dir }}/inputs/rhsm-activation"
+
+# Versions.
+microshift_repo: rhocp-4.22-for-rhel-9-x86_64-rpms
+fast_datapath_repo: fast-datapath-for-rhel-9-x86_64-rpms
+bundle_packages: [microshift, openshift-clients, skopeo, firewalld]
+# Images carried in addition to the MicroShift release images (the test application).
+extra_images:
+  - registry.access.redhat.com/ubi9/httpd-24:latest
+
+# true: node1 is the control plane and node2, node3 join it. false: three separate single-node MicroShifts.
+multinode: true
+
+# libvirt.
+virsh: virsh -c qemu:///system
+vm_prefix: "microshift-"
+prep_network: microshift-prep
+prep_bridge: virbr-ushp
+prep_subnet: 192.168.180
+prep_mac: "52:54:00:b1:80"
+lab_network: microshift-lab
+lab_bridge: virbr-ushl
+lab_subnet: 192.168.181
+lab_mac: "52:54:00:b1:81"
+lab_domain: microshift.internal
+
+vms:
+  prep:  {network: "{{ prep_network }}", mac: "{{ prep_mac }}:0b", ip: "{{ prep_subnet }}.11", memory: 4096, vcpus: 2, disk: 40G}
+  node1: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:15", ip: "{{ lab_subnet }}.21", memory: 4096, vcpus: 2, disk: 30G}
+  node2: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:16", ip: "{{ lab_subnet }}.22", memory: 4096, vcpus: 2, disk: 30G}
+  node3: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:17", ip: "{{ lab_subnet }}.23", memory: 4096, vcpus: 2, disk: 30G}
+
+bundle: "{{ lab_dir }}/bundle/microshift-bundle.tar"
+ssh_config: "{{ lab_dir }}/ssh_config"
+ansible_ssh_common_args: "-F {{ ssh_config }}"
+ansible_python_interpreter: /usr/bin/python3
