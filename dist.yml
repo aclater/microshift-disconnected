@@ -60,11 +60,15 @@
 
     # New repositories are readable without a login, so clients never hold a registry password.
     # Pushing still needs the administrator login, which stays on this server.
-    - name: Let clients pull without a login
+    # Nobody can create an account either, so the administrator is the only one who can push.
+    - name: Let clients pull without a login, and nobody sign up
       ansible.builtin.lineinfile:
         path: /root/quay-install/quay-config/config.yaml
-        regexp: "^CREATE_PRIVATE_REPO_ON_PUSH:"
-        line: "CREATE_PRIVATE_REPO_ON_PUSH: false"
+        regexp: "^{{ item.key }}:"
+        line: "{{ item.key }}: {{ item.value }}"
+      loop:
+        - {key: CREATE_PRIVATE_REPO_ON_PUSH, value: "false"}
+        - {key: FEATURE_USER_CREATION, value: "false"}
       register: registry_config
 
     - name: Restart the registry with the new setting
@@ -107,7 +111,8 @@
       args:
         creates: /var/www/html/bundle/.images-pushed
       environment:
-        REGISTRY_CREDS: "{{ registry_user }}:{{ registry_password }}"
+        REGISTRY_USER: "{{ registry_user }}"
+        REGISTRY_PASSWORD: "{{ registry_password }}"
       no_log: true
 
     - name: Mark the images as pushed

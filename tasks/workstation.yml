@@ -1,10 +1,11 @@
 # Working folder, SSH key and SSH settings on the workstation.
-# Private: the VM disks, the bundle and the keys are for this user only.
+# Private: the VM disks, the bundle and the keys are for this user only. The group bits are left alone:
+# on a folder that carries the qemu permission below they hold its mask.
 - name: Create the working folder
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
-    mode: "0700"
+    mode: "u=rwx,o="
   loop:
     - "{{ lab_dir }}"
     - "{{ lab_dir }}/inputs"

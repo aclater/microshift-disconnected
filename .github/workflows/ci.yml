@@ -8,7 +8,7 @@ permissions:
 jobs:
   lint:
     runs-on: ubuntu-latest
-    container: registry.fedoraproject.org/fedora:43
+    container: registry.fedoraproject.org/fedora@sha256:1e1bba2de97628f9b9cb2fa7de2088835c7ac31e898333f9bf0595095985c0ac # 43
     steps:
       - run: dnf install -y ansible-core yamllint git-core
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
