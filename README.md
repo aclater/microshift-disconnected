@@ -32,7 +32,7 @@ In a real disconnected site, run `prepare.yml` on a connected machine, carry
 A Linux workstation with KVM and at least 20 GiB of free memory, and these packages:
 
 ```
-sudo dnf install ansible-core libvirt qemu-kvm virt-install
+sudo dnf install ansible-core git libvirt qemu-kvm virt-install
 sudo systemctl enable --now libvirtd
 sudo usermod -aG libvirt "$USER"
 ```
@@ -153,7 +153,8 @@ with Red Hat and removes the VM.
 
 ## What was tested
 
-Run on MicroShift 4.22.20 and the RHEL 9.8 guest image, on a Fedora workstation with libvirt:
+Run on MicroShift 4.22.20 and the RHEL 9.8 guest image, on a Fedora workstation with libvirt and on a freshly
+installed RHEL 9.8 workstation (ansible-core 2.14):
 
 | Step | Result | Time |
 |---|---|---|
@@ -166,11 +167,13 @@ Run on MicroShift 4.22.20 and the RHEL 9.8 guest image, on a Fedora workstation 
 | Restart | After shutting down and starting all four VMs the cluster and the registry come back | |
 | `teardown.yml` | No VMs, disks or networks left | under 1 min |
 
-The runs used other network names, addresses and input file locations than the defaults, set with `-e`.
+On the RHEL 9.8 workstation, every command from "Before you start" to "Remove everything" was run as written, with
+the default names. That workstation was itself a VM, so the lab ran nested and slower: `dist.yml` 4 min,
+`cluster.yml` 8 min. The times in the table are from the Fedora workstation, where the runs used other network
+names, addresses and input file locations than the defaults, set with `-e`.
 
 Not tested:
 
-- the `dnf install` and `usermod` lines under "Before you start" (the test workstation already had the packages);
 - carrying the bundle to a physically separate site: `prepare.yml` and the other playbooks ran on the same workstation;
 - any guest image other than RHEL 9.8, or any MicroShift release other than 4.22;
 - updating a running cluster from a newer bundle.
