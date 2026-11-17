@@ -1,17 +1,21 @@
 # Working folder, SSH key and SSH settings on the workstation.
-# Private: the VM disks, the bundle and the keys are for this user only. The group bits are left alone:
-# on a folder that carries the qemu permission below they hold its mask.
+# Private: the VM disks, the bundle, the inputs and the keys are for this user only.
+# The working folder and images/ later carry a permission entry for qemu (below). Changing their mode
+# again would switch that entry off, so they are created private once and then left alone.
 - name: Create the working folder
-  ansible.builtin.file:
-    path: "{{ item }}"
-    state: directory
-    mode: "u=rwx,o="
+  ansible.builtin.command: mkdir -m 0700 "{{ item }}"
+  args:
+    creates: "{{ item }}"
   loop:
     - "{{ lab_dir }}"
-    - "{{ lab_dir }}/inputs"
-    - "{{ lab_dir }}/keys"
     - "{{ lab_dir }}/images"
-    - "{{ lab_dir }}/bundle"
+
+- name: Create the private folders for inputs, keys and the bundle
+  ansible.builtin.file:
+    path: "{{ lab_dir }}/{{ item }}"
+    state: directory
+    mode: "0700"
+  loop: [inputs, keys, bundle]
 
 # The system libvirt runs VMs as the user qemu, which must be able to pass through every folder above
 # the disks. Folders that already let it through are left alone.
