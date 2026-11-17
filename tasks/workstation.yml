@@ -1,22 +1,23 @@
 # Working folder, SSH key and SSH settings on the workstation.
+# Private: the VM disks, the bundle and the keys are for this user only.
 - name: Create the working folder
   ansible.builtin.file:
-    path: "{{ lab_dir }}/{{ item }}"
+    path: "{{ item }}"
     state: directory
-  loop: [inputs, keys, images, bundle]
-
-- name: Keep the inputs and the SSH key private
-  ansible.builtin.file:
-    path: "{{ lab_dir }}/{{ item }}"
     mode: "0700"
-  loop: [inputs, keys]
+  loop:
+    - "{{ lab_dir }}"
+    - "{{ lab_dir }}/inputs"
+    - "{{ lab_dir }}/keys"
+    - "{{ lab_dir }}/images"
+    - "{{ lab_dir }}/bundle"
 
 # The system libvirt runs VMs as the user qemu, which must be able to pass through every folder above
 # the disks. Folders that already let it through are left alone.
 - name: Let libvirt reach the VM disks
   ansible.builtin.shell: |
     set -e
-    dir={{ lab_dir }}/images
+    dir='{{ lab_dir }}/images'
     while [ "$dir" != / ]; do
         if ! getfacl -cp "$dir" | grep -qE '^(user:qemu:..x|other::..x)$'; then
             setfacl -m u:qemu:x "$dir"

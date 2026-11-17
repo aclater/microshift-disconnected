@@ -37,7 +37,12 @@ sudo systemctl enable --now libvirtd
 sudo usermod -aG libvirt "$USER"
 ```
 
-Log out and in again after the last command.
+Log out and in again after the last command. Membership of the `libvirt` group lets a user manage every VM on the
+workstation, which is equivalent to root access.
+
+The playbooks keep everything in `~/.local/share/microshift-lab`, readable only by you. So that libvirt can open
+the VM disks there, they give the `qemu` user permission to pass through (not list or read) each folder above the
+disks, up to your home folder, where it does not have it already. `teardown.yml` leaves that permission in place.
 
 Three things from your Red Hat account, saved under `~/.local/share/microshift-lab/inputs/`:
 
@@ -99,16 +104,21 @@ The `curl` command fails: the network has no route out.
 | What | Where |
 |---|---|
 | RPM repository: MicroShift and its dependencies | `http://dist.microshift.internal/bundle/rpms` |
-| Container registry (mirror registry for Red Hat OpenShift): the MicroShift release images | `https://dist.microshift.internal:8443`, user `init`, password `microshift123` |
+| Container registry (mirror registry for Red Hat OpenShift): the MicroShift release images | `https://dist.microshift.internal:8443`, pulls need no login |
 | Image signatures for images Red Hat signs | `http://dist.microshift.internal/sigstore` |
 | Settings a client needs | `http://dist.microshift.internal/client/` |
 
-The password is a fixed lab password. Change `registry_password` in `group_vars/all.yml` for anything else.
+Pushing to the registry needs its administrator login, `init`. Its password is generated on the first run and kept
+in `~/.local/share/microshift-lab/registry-password`; only `dist.yml` uses it, and no other machine receives it.
+
+The playbooks deliver the client settings to the nodes over SSH.
 
 ## Build another machine
 
 Any RHEL 9.8 machine on the disconnected network, started from the same guest image, becomes a single-node
-MicroShift machine with the five files under `/client/` and one install. As root on that machine:
+MicroShift machine with the four files under `/client/` and one install. These commands fetch the settings,
+including the certificate authority the machine will trust, over plain HTTP: use them only where you trust every
+machine on the disconnected network, and copy the files by another route otherwise. As root on that machine:
 
 ```
 curl -o /etc/yum.repos.d/microshift-dist.repo http://dist.microshift.internal/client/microshift-dist.repo
@@ -117,8 +127,6 @@ update-ca-trust
 dnf install -y --disablerepo=* --enablerepo=microshift-dist microshift openshift-clients
 curl -o /etc/containers/registries.conf.d/microshift-dist.conf http://dist.microshift.internal/client/registries.conf
 curl -o /etc/containers/registries.d/microshift-dist.yaml http://dist.microshift.internal/client/registries.d.yaml
-curl -o /etc/crio/openshift-pull-secret http://dist.microshift.internal/client/pull-secret.json
-chmod 600 /etc/crio/openshift-pull-secret
 systemctl enable --now microshift
 ```
 
@@ -139,6 +147,9 @@ ansible-playbook teardown.yml
 ```
 
 This removes the VMs, their disks and the networks. The bundle and your three input files stay.
+
+If `prepare.yml` stops part-way, run `teardown.yml` before trying again: it releases the prep VM's registration
+with Red Hat and removes the VM.
 
 ## What was tested
 

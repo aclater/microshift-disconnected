@@ -56,6 +56,31 @@
             --initUser {{ registry_user }} --initPassword {{ registry_password }}
       args:
         creates: /root/quay-install/quay-rootCA/rootCA.pem
+      no_log: true
+
+    # New repositories are readable without a login, so clients never hold a registry password.
+    # Pushing still needs the administrator login, which stays on this server.
+    - name: Let clients pull without a login
+      ansible.builtin.lineinfile:
+        path: /root/quay-install/quay-config/config.yaml
+        regexp: "^CREATE_PRIVATE_REPO_ON_PUSH:"
+        line: "CREATE_PRIVATE_REPO_ON_PUSH: false"
+      register: registry_config
+
+    - name: Restart the registry with the new setting
+      ansible.builtin.systemd:
+        name: quay-app
+        state: restarted
+      when: registry_config is changed
+
+    - name: Wait for the registry
+      ansible.builtin.uri:
+        url: "https://{{ registry }}/health/instance"
+        validate_certs: false
+      register: registry_health
+      until: registry_health.status == 200
+      retries: 60
+      delay: 5
 
     - name: Trust the registry's certificate authority
       ansible.builtin.shell: |
@@ -78,9 +103,12 @@
               lookaside-staging: file:///var/www/html/sigstore
 
     - name: Push the images to the registry
-      ansible.builtin.script: files/push-images.sh {{ registry }} {{ registry_user }} {{ registry_password }}
+      ansible.builtin.script: files/push-images.sh {{ registry }}
       args:
         creates: /var/www/html/bundle/.images-pushed
+      environment:
+        REGISTRY_CREDS: "{{ registry_user }}:{{ registry_password }}"
+      no_log: true
 
     - name: Mark the images as pushed
       ansible.builtin.file:
@@ -138,13 +166,6 @@
         dest: /var/www/html/client/rootCA.pem
         remote_src: true
         mode: "0644"
-
-    - name: Publish the registry login for clients
-      ansible.builtin.copy:
-        dest: /var/www/html/client/pull-secret.json
-        mode: "0644"
-        content: |
-          {"auths": {"{{ registry }}": {"auth": "{{ (registry_user ~ ':' ~ registry_password) | b64encode }}"}}}
 
     - name: Label the web content for SELinux
       ansible.builtin.command: restorecon -R /var/www

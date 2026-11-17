@@ -1,1 +1,8 @@
 *.retry
+# Never commit credentials, disk images or bundles.
+pull-secret*
+rhsm-activation*
+registry-password*
+*.qcow2
+*.tar
+*.tar.gz

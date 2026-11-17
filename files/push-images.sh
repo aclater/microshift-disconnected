@@ -2,11 +2,11 @@
 # Runs on the distribution server, as root. Pushes the bundle's images into the local registry under the
 # same paths they have at Red Hat, without the registry host name. Image signatures that came with an
 # image are written to /var/www/html/sigstore (see /etc/containers/registries.d).
-# Arguments: registry user password
+# Argument: the registry. The login comes from the environment variable REGISTRY_CREDS (user:password).
 set -euo pipefail
 
 registry=$1
-creds=$2:$3
+creds=${REGISTRY_CREDS}
 src=/var/www/html/bundle/images
 
 while read -r dir image; do

@@ -11,6 +11,7 @@ rhsm_file: "{{ lab_dir }}/inputs/rhsm-activation"
 microshift_repo: rhocp-4.22-for-rhel-9-x86_64-rpms
 fast_datapath_repo: fast-datapath-for-rhel-9-x86_64-rpms
 mirror_registry_url: https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/mirror-registry/1.3.11/mirror-registry.tar.gz
+mirror_registry_sha256: b2fbf8b13d794cdebb8baee48afbfa78d13c4d76a1c60fc99d52c3c9abd31cf1
 # What a MicroShift machine installs, and what the distribution server needs on top.
 node_packages: [microshift, openshift-clients, firewalld, lvm2]
 dist_packages: [httpd, podman, skopeo]
@@ -38,12 +39,14 @@ lab_domain: microshift.internal
 # The distribution server: package repository on port 80, container registry on port 8443.
 dist_host: "dist.{{ lab_domain }}"
 registry: "{{ dist_host }}:8443"
+# The registry's administrator. Only the distribution server uses this login; clients pull without one.
+# The password is generated on first use and kept in the working folder.
 registry_user: init
-registry_password: microshift123
+registry_password: "{{ lookup('ansible.builtin.password', lab_dir ~ '/registry-password', chars=['ascii_letters', 'digits'], length=24) }}"
 
 vms:
-  dist:  {network: "{{ lab_network }}", mac: "{{ lab_mac }}:0a", ip: "{{ lab_subnet }}.10", memory: 6144, vcpus: 2, disk: 40G}
-  prep:  {network: "{{ prep_network }}", mac: "{{ prep_mac }}:0b", ip: "{{ prep_subnet }}.11", memory: 4096, vcpus: 2, disk: 40G}
+  dist: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:0a", ip: "{{ lab_subnet }}.10", memory: 6144, vcpus: 2, disk: 40G}
+  prep: {network: "{{ prep_network }}", mac: "{{ prep_mac }}:0b", ip: "{{ prep_subnet }}.11", memory: 4096, vcpus: 2, disk: 40G}
   node1: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:15", ip: "{{ lab_subnet }}.21", memory: 4096, vcpus: 2, disk: 30G}
   node2: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:16", ip: "{{ lab_subnet }}.22", memory: 4096, vcpus: 2, disk: 30G}
   node3: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:17", ip: "{{ lab_subnet }}.23", memory: 4096, vcpus: 2, disk: 30G}

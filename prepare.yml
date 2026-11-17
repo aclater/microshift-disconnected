@@ -80,24 +80,27 @@
       ansible.builtin.get_url:
         url: "{{ mirror_registry_url }}"
         dest: /var/bundle/mirror-registry.tar.gz
+        checksum: "sha256:{{ mirror_registry_sha256 }}"
         mode: "0644"
 
-    - name: Copy the pull secret to the VM
-      ansible.builtin.copy:
-        src: "{{ pull_secret }}"
-        dest: /root/pull-secret.json
-        mode: "0600"
-      no_log: true
-
     - name: Download the container images
-      ansible.builtin.script: files/mirror-images.sh {{ extra_images | join(' ') }}
-      args:
-        creates: /var/bundle/images/list.txt
+      block:
+        - name: Copy the pull secret to the VM
+          ansible.builtin.copy:
+            src: "{{ pull_secret }}"
+            dest: /root/pull-secret.json
+            mode: "0600"
+          no_log: true
 
-    - name: Remove the pull secret from the VM
-      ansible.builtin.file:
-        path: /root/pull-secret.json
-        state: absent
+        - name: Download the container images
+          ansible.builtin.script: files/mirror-images.sh {{ extra_images | join(' ') }}
+          args:
+            creates: /var/bundle/images/list.txt
+      always:
+        - name: Remove the pull secret from the VM
+          ansible.builtin.file:
+            path: /root/pull-secret.json
+            state: absent
 
     - name: Record what is in the bundle
       ansible.builtin.shell: |

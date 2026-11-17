@@ -5,15 +5,25 @@
   gather_facts: false
   become: true
   tasks:
-    # The files under /client/ are all a machine needs to install MicroShift from the distribution server.
-    - name: Fetch the repository settings and the certificate authority
-      ansible.builtin.get_url:
-        url: "http://{{ dist_host }}/client/{{ item.file }}"
+    # The four client settings files are read from the distribution server and delivered over SSH.
+    - name: Read the client settings from the distribution server
+      ansible.builtin.slurp:
+        src: "/var/www/html/client/{{ item }}"
+      loop: [microshift-dist.repo, rootCA.pem, registries.conf, registries.d.yaml]
+      delegate_to: dist
+      run_once: true
+      register: client_files
+
+    - name: Install the repository settings and the certificate authority
+      ansible.builtin.copy:
+        content: "{{ client_files.results[item.index].content | b64decode }}"
         dest: "{{ item.dest }}"
-        mode: "{{ item.mode | default('0644') }}"
+        mode: "0644"
       loop:
-        - {file: microshift-dist.repo, dest: /etc/yum.repos.d/microshift-dist.repo}
-        - {file: rootCA.pem, dest: /etc/pki/ca-trust/source/anchors/microshift-dist.pem}
+        - {index: 0, dest: /etc/yum.repos.d/microshift-dist.repo}
+        - {index: 1, dest: /etc/pki/ca-trust/source/anchors/microshift-dist.pem}
+      loop_control:
+        label: "{{ item.dest }}"
 
     - name: Trust the distribution server's certificate authority
       ansible.builtin.command: update-ca-trust
@@ -26,15 +36,16 @@
       changed_when: "'Nothing to do' not in install.stdout"
 
     # After the install: the folders these go into come with the packages.
-    - name: Fetch the registry settings and the registry login
-      ansible.builtin.get_url:
-        url: "http://{{ dist_host }}/client/{{ item.file }}"
+    - name: Install the registry settings
+      ansible.builtin.copy:
+        content: "{{ client_files.results[item.index].content | b64decode }}"
         dest: "{{ item.dest }}"
-        mode: "{{ item.mode | default('0644') }}"
+        mode: "0644"
       loop:
-        - {file: registries.conf, dest: /etc/containers/registries.conf.d/microshift-dist.conf}
-        - {file: registries.d.yaml, dest: /etc/containers/registries.d/microshift-dist.yaml}
-        - {file: pull-secret.json, dest: /etc/crio/openshift-pull-secret, mode: "0600"}
+        - {index: 2, dest: /etc/containers/registries.conf.d/microshift-dist.conf}
+        - {index: 3, dest: /etc/containers/registries.d/microshift-dist.yaml}
+      loop_control:
+        label: "{{ item.dest }}"
 
     - name: Start the firewall
       ansible.builtin.systemd:
@@ -95,21 +106,21 @@
     - name: Start the control plane
       when: runs_control_plane
       block:
-      - name: Start MicroShift
-        ansible.builtin.systemd:
-          name: microshift
-          state: started
+        - name: Start MicroShift
+          ansible.builtin.systemd:
+            name: microshift
+            state: started
 
-      - name: Wait until MicroShift is healthy
-        ansible.builtin.command: microshift healthcheck --timeout=600s
-        changed_when: false
+        - name: Wait until MicroShift is healthy
+          ansible.builtin.command: microshift healthcheck --timeout=600s
+          changed_when: false
 
-      - name: Read the kubeconfig the other nodes join with
-        ansible.builtin.slurp:
-          src: "/var/lib/microshift/resources/kubeadmin/{{ vms[inventory_hostname].ip }}/kubeconfig"
-        register: join_kubeconfig
-        when: multinode | bool
-        no_log: true
+        - name: Read the kubeconfig the other nodes join with
+          ansible.builtin.slurp:
+            src: "/var/lib/microshift/resources/kubeadmin/{{ vms[inventory_hostname].ip }}/kubeconfig"
+          register: join_kubeconfig
+          when: multinode | bool
+          no_log: true
 
 - name: Join the workers
   hosts: workers
@@ -125,24 +136,26 @@
     - name: Join the node
       when: multinode | bool and not joined.stat.exists
       block:
-        - name: Copy the join kubeconfig
-          ansible.builtin.copy:
-            content: "{{ hostvars[groups['control_plane'][0]].join_kubeconfig.content | b64decode }}"
-            dest: /root/kubeconfig-join
-            mode: "0600"
-          no_log: true
+        - name: Join with the control plane's kubeconfig
+          block:
+            - name: Copy the join kubeconfig
+              ansible.builtin.copy:
+                content: "{{ hostvars[groups['control_plane'][0]].join_kubeconfig.content | b64decode }}"
+                dest: /root/kubeconfig-join
+                mode: "0600"
+              no_log: true
 
-        - name: Add the node to the cluster
-          ansible.builtin.command: microshift add-node --kubeconfig=/root/kubeconfig-join
+            - name: Add the node to the cluster
+              ansible.builtin.command: microshift add-node --kubeconfig=/root/kubeconfig-join
 
-        - name: Wait until the node is healthy
-          ansible.builtin.command: microshift healthcheck --timeout=600s
-          changed_when: false
-
-        - name: Remove the join kubeconfig
-          ansible.builtin.file:
-            path: /root/kubeconfig-join
-            state: absent
+            - name: Wait until the node is healthy
+              ansible.builtin.command: microshift healthcheck --timeout=600s
+              changed_when: false
+          always:
+            - name: Remove the join kubeconfig
+              ansible.builtin.file:
+                path: /root/kubeconfig-join
+                state: absent
 
         - name: Mark the node as joined
           ansible.builtin.file:
@@ -160,37 +173,37 @@
     - name: Check the cluster with a test application
       when: runs_control_plane
       block:
-      - name: Give cloud-user a kubeconfig
-        ansible.builtin.shell: |
-          set -e
-          mkdir -p /home/cloud-user/.kube
-          cp /var/lib/microshift/resources/kubeadmin/kubeconfig /home/cloud-user/.kube/config
-          chown -R cloud-user: /home/cloud-user/.kube
-          chmod 600 /home/cloud-user/.kube/config
-        changed_when: false
+        - name: Give cloud-user a kubeconfig
+          ansible.builtin.shell: |
+            set -e
+            mkdir -p /home/cloud-user/.kube
+            cp /var/lib/microshift/resources/kubeadmin/kubeconfig /home/cloud-user/.kube/config
+            chown -R cloud-user: /home/cloud-user/.kube
+            chmod 600 /home/cloud-user/.kube/config
+          changed_when: false
 
-      - name: Wait for the nodes to be Ready
-        ansible.builtin.command: oc wait node --all --for=condition=Ready --timeout=300s
-        changed_when: false
+        - name: Wait for the nodes to be Ready
+          ansible.builtin.command: oc wait node --all --for=condition=Ready --timeout=300s
+          changed_when: false
 
-      - name: Copy the test application
-        ansible.builtin.copy:
-          src: files/hello.yaml
-          dest: /root/hello.yaml
-          mode: "0644"
+        - name: Copy the test application
+          ansible.builtin.copy:
+            src: files/hello.yaml
+            dest: /root/hello.yaml
+            mode: "0644"
 
-      - name: Deploy the test application, one pod per node
-        ansible.builtin.command: oc apply -f /root/hello.yaml
+        - name: Deploy the test application, one pod per node
+          ansible.builtin.command: oc apply -f /root/hello.yaml
 
-      - name: Wait for its pods
-        ansible.builtin.command: oc rollout status -n hello daemonset/hello --timeout=300s
-        changed_when: false
+        - name: Wait for its pods
+          ansible.builtin.command: oc rollout status -n hello daemonset/hello --timeout=300s
+          changed_when: false
 
-      - name: List the nodes and the pods
-        ansible.builtin.shell: oc get nodes -o wide && oc get pods -n hello -o wide
-        register: summary
-        changed_when: false
+        - name: List the nodes and the pods
+          ansible.builtin.shell: oc get nodes -o wide && oc get pods -n hello -o wide
+          register: summary
+          changed_when: false
 
-      - name: Report
-        ansible.builtin.debug:
-          msg: "{{ summary.stdout_lines }}"
+        - name: Report
+          ansible.builtin.debug:
+            msg: "{{ summary.stdout_lines }}"
