@@ -1,0 +1,164 @@
+# Disconnected side, step 2: stage the distribution server from the bundle.
+# It then holds everything a MicroShift machine is built from: the package repository (HTTP, port 80)
+# and the container registry (HTTPS, port 8443).
+- name: Stage the distribution server
+  hosts: dist
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Create the web folder
+      ansible.builtin.file:
+        path: /var/www/html
+        state: directory
+        mode: "0755"
+
+    - name: See whether the bundle is unpacked already
+      ansible.builtin.stat:
+        path: /var/www/html/bundle/VERSION
+      register: unpacked
+
+    - name: Copy the bundle to the server
+      ansible.builtin.command: scp -q -F {{ ssh_config }} {{ bundle }} dist:/var/tmp/microshift-bundle.tar
+      delegate_to: localhost
+      become: false
+      when: not unpacked.stat.exists
+
+    - name: Unpack the bundle
+      ansible.builtin.shell: tar -C /var/www/html -xf /var/tmp/microshift-bundle.tar && rm -f /var/tmp/microshift-bundle.tar
+      args:
+        creates: /var/www/html/bundle/VERSION
+
+    - name: Point dnf at the bundle's packages
+      ansible.builtin.copy:
+        dest: /etc/yum.repos.d/microshift-dist.repo
+        mode: "0644"
+        content: |
+          [microshift-dist]
+          name=MicroShift distribution server
+          baseurl=file:///var/www/html/bundle/rpms
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+
+    - name: Install the web server and the container tools
+      ansible.builtin.command: >-
+        dnf install -y --disablerepo=* --enablerepo=microshift-dist {{ dist_packages | join(' ') }}
+      args:
+        creates: /usr/sbin/httpd
+
+    - name: Install the mirror registry
+      ansible.builtin.shell: |
+        set -e
+        mkdir -p /root/mirror-registry
+        tar -C /root/mirror-registry -xzf /var/www/html/bundle/mirror-registry.tar.gz
+        cd /root/mirror-registry
+        ./mirror-registry install --quayHostname {{ registry }} \
+            --initUser {{ registry_user }} --initPassword {{ registry_password }}
+      args:
+        creates: /root/quay-install/quay-rootCA/rootCA.pem
+
+    - name: Trust the registry's certificate authority
+      ansible.builtin.shell: |
+        set -e
+        cp /root/quay-install/quay-rootCA/rootCA.pem /etc/pki/ca-trust/source/anchors/microshift-dist.pem
+        update-ca-trust
+      args:
+        creates: /etc/pki/ca-trust/source/anchors/microshift-dist.pem
+
+    # Red Hat signs the images in registry.redhat.io and registry.access.redhat.com, and RHEL refuses
+    # them unsigned. The registry cannot hold those signatures, so the web server does.
+    - name: Keep image signatures on the web server
+      ansible.builtin.copy:
+        dest: /etc/containers/registries.d/microshift-dist.yaml
+        mode: "0644"
+        content: |
+          docker:
+            {{ registry }}:
+              lookaside: http://{{ dist_host }}/sigstore
+              lookaside-staging: file:///var/www/html/sigstore
+
+    - name: Push the images to the registry
+      ansible.builtin.script: files/push-images.sh {{ registry }} {{ registry_user }} {{ registry_password }}
+      args:
+        creates: /var/www/html/bundle/.images-pushed
+
+    - name: Mark the images as pushed
+      ansible.builtin.file:
+        path: /var/www/html/bundle/.images-pushed
+        state: touch
+        mode: "0644"
+        modification_time: preserve
+        access_time: preserve
+
+    - name: Create the folder for client settings
+      ansible.builtin.file:
+        path: /var/www/html/client
+        state: directory
+        mode: "0755"
+
+    - name: Publish the repository settings for clients
+      ansible.builtin.copy:
+        dest: /var/www/html/client/microshift-dist.repo
+        mode: "0644"
+        content: |
+          [microshift-dist]
+          name=MicroShift distribution server
+          baseurl=http://{{ dist_host }}/bundle/rpms
+          enabled=1
+          gpgcheck=1
+          gpgkey=file:///etc/pki/rpm-gpg/RPM-GPG-KEY-redhat-release
+
+    - name: Publish the registry redirection for clients
+      ansible.builtin.copy:
+        dest: /var/www/html/client/registries.conf
+        mode: "0644"
+        content: |
+          # Pulls from Red Hat's registries go to the distribution server instead.
+          {% for source in ['quay.io', 'registry.redhat.io', 'registry.access.redhat.com'] %}
+          [[registry]]
+          prefix = "{{ source }}"
+          location = "{{ source }}"
+          [[registry.mirror]]
+          location = "{{ registry }}"
+
+          {% endfor %}
+
+    - name: Publish the signature location for clients
+      ansible.builtin.copy:
+        dest: /var/www/html/client/registries.d.yaml
+        mode: "0644"
+        content: |
+          docker:
+            {{ registry }}:
+              lookaside: http://{{ dist_host }}/sigstore
+
+    - name: Publish the certificate authority for clients
+      ansible.builtin.copy:
+        src: /root/quay-install/quay-rootCA/rootCA.pem
+        dest: /var/www/html/client/rootCA.pem
+        remote_src: true
+        mode: "0644"
+
+    - name: Publish the registry login for clients
+      ansible.builtin.copy:
+        dest: /var/www/html/client/pull-secret.json
+        mode: "0644"
+        content: |
+          {"auths": {"{{ registry }}": {"auth": "{{ (registry_user ~ ':' ~ registry_password) | b64encode }}"}}}
+
+    - name: Label the web content for SELinux
+      ansible.builtin.command: restorecon -R /var/www
+      changed_when: false
+
+    - name: Start the web server
+      ansible.builtin.systemd:
+        name: httpd
+        enabled: true
+        state: started
+
+    - name: Check the repository and the registry answer
+      ansible.builtin.uri:
+        url: "{{ item }}"
+      loop:
+        - "http://{{ dist_host }}/bundle/rpms/repodata/repomd.xml"
+        - "https://{{ registry }}/health/instance"

@@ -10,13 +10,17 @@ rhsm_file: "{{ lab_dir }}/inputs/rhsm-activation"
 # Versions.
 microshift_repo: rhocp-4.22-for-rhel-9-x86_64-rpms
 fast_datapath_repo: fast-datapath-for-rhel-9-x86_64-rpms
-bundle_packages: [microshift, openshift-clients, skopeo, firewalld]
+mirror_registry_url: https://mirror.openshift.com/pub/openshift-v4/x86_64/clients/mirror-registry/1.3.11/mirror-registry.tar.gz
+# What a MicroShift machine installs, and what the distribution server needs on top.
+node_packages: [microshift, openshift-clients, firewalld, lvm2]
+dist_packages: [httpd, podman, skopeo]
 # Images carried in addition to the MicroShift release images (the test application).
 extra_images:
   - registry.access.redhat.com/ubi9/httpd-24:latest
 
 # true: node1 is the control plane and node2, node3 join it. false: three separate single-node MicroShifts.
 multinode: true
+runs_control_plane: "{{ not (multinode | bool) or inventory_hostname in groups['control_plane'] }}"
 
 # libvirt.
 virsh: virsh -c qemu:///system
@@ -31,7 +35,14 @@ lab_subnet: 192.168.181
 lab_mac: "52:54:00:b1:81"
 lab_domain: microshift.internal
 
+# The distribution server: package repository on port 80, container registry on port 8443.
+dist_host: "dist.{{ lab_domain }}"
+registry: "{{ dist_host }}:8443"
+registry_user: init
+registry_password: microshift123
+
 vms:
+  dist:  {network: "{{ lab_network }}", mac: "{{ lab_mac }}:0a", ip: "{{ lab_subnet }}.10", memory: 6144, vcpus: 2, disk: 40G}
   prep:  {network: "{{ prep_network }}", mac: "{{ prep_mac }}:0b", ip: "{{ prep_subnet }}.11", memory: 4096, vcpus: 2, disk: 40G}
   node1: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:15", ip: "{{ lab_subnet }}.21", memory: 4096, vcpus: 2, disk: 30G}
   node2: {network: "{{ lab_network }}", mac: "{{ lab_mac }}:16", ip: "{{ lab_subnet }}.22", memory: 4096, vcpus: 2, disk: 30G}

@@ -3,6 +3,9 @@ all:
     connected:
       hosts:
         prep:
+    dist:
+      hosts:
+        dist:
     nodes:
       children:
         control_plane:

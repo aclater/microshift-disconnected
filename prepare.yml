@@ -1,5 +1,5 @@
 # Connected side. Builds the bundle that is carried into the disconnected environment:
-# the MicroShift RPMs with their dependencies, and the container images.
+# the MicroShift RPMs with their dependencies, the container images, and the mirror registry installer.
 # A registered RHEL VM does the downloading and is removed again at the end.
 - name: Create the connected network and the prep VM
   hosts: localhost
@@ -57,10 +57,12 @@
         subscription-manager repos --enable {{ microshift_repo }} --enable {{ fast_datapath_repo }}
 
     # Download before installing anything here: dnf leaves out packages that are already installed, and
-    # the nodes start from the same guest image as this VM.
+    # the other machines start from the same guest image as this VM. keepcache stops the next dnf
+    # transaction from deleting the downloads.
     - name: Download MicroShift and everything it needs on a fresh guest image
       ansible.builtin.command: >-
-        dnf install -y --downloadonly --downloaddir /var/bundle/rpms {{ bundle_packages | join(' ') }}
+        dnf install -y --downloadonly --setopt=keepcache=1 --downloaddir=/var/bundle/rpms
+        {{ (node_packages + dist_packages) | join(' ') }}
       args:
         creates: /var/bundle/rpms
 
@@ -73,6 +75,12 @@
       ansible.builtin.command: createrepo_c /var/bundle/rpms
       args:
         creates: /var/bundle/rpms/repodata
+
+    - name: Download the mirror registry installer
+      ansible.builtin.get_url:
+        url: "{{ mirror_registry_url }}"
+        dest: /var/bundle/mirror-registry.tar.gz
+        mode: "0644"
 
     - name: Copy the pull secret to the VM
       ansible.builtin.copy:
