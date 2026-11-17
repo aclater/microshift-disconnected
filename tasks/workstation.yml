@@ -22,6 +22,12 @@
 - name: Let libvirt reach the VM disks
   ansible.builtin.shell: |
     set -e
+    # A working folder made by hand, or by an earlier release, may be open to others: close it first.
+    for dir in '{{ lab_dir }}' '{{ lab_dir }}/images'; do
+        before=$(stat -c %a "$dir")
+        chmod g-rw,o-rwx "$dir"
+        [ "$before" = "$(stat -c %a "$dir")" ] || echo "changed $dir"
+    done
     dir='{{ lab_dir }}/images'
     while [ "$dir" != / ]; do
         if ! getfacl -cp "$dir" | grep -qE '^(user:qemu:..x|other::..x)$'; then
